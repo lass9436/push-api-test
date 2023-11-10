@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="kor">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Push API Test</title>
+</head>
+<body>
+  <h1>Web Push API Test</h1>
+
+  <label for="title">Title:</label>
+  <input type="text" id="title" name="title">
+
+  <label for="content">Content:</label>
+  <input type="text" id="content" name="content">
+
+  <button id="sendNotificationBtn">Send Notification</button>
+
+  <script>
+    function generateRandomString() {
+      return (() => Array.from({ length: 16 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random() * 62))).join(''))();
+    }
+
+    const endpoint = generateRandomString();
+
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/subscribe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ endpoint }),
+        });
+
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            console.log('Received message from service worker:', event.data);
+            alert(event.data);
+        });
+
+        document.getElementById('sendNotificationBtn').addEventListener('click', () => {
+            const title = document.getElementById('title').value;
+            const content = document.getElementById('content').value;
+
+        fetch('/sendNotification', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                },
+            body: JSON.stringify({ endpoint, title, content }),
+        })
+        .then(response => response.json())
+        .then(data => console.log(data))
+        .catch(error => console.error('Error sending notification:', error));
+        });
+
+    });
+  </script>
+</body>
+</html>
