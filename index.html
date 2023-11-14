@@ -8,52 +8,150 @@
 <body>
   <h1>Web Push API Test</h1>
 
-  <label for="title">Title:</label>
-  <input type="text" id="title" name="title">
-
-  <label for="content">Content:</label>
-  <input type="text" id="content" name="content">
-
-  <button id="sendNotificationBtn">Send Notification</button>
+  <label for="content">입력:</label>
+  <input type="text" id="content" name="content" placeholder="아무거나 입력하세요">
+  <button onclick="pushMessage()">전송</button>
 
   <script>
-    function generateRandomString() {
-      return (() => Array.from({ length: 16 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random() * 62))).join(''))();
+    function pushMessage(){
+      const content = document.getElementById('content').value;
+      fetch('/pushMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content }),
+      });
     }
 
-    const endpoint = generateRandomString();
+    function checkPushAPISupport(){
+      if (!('serviceWorker' in navigator)) {
+        // Service Worker isn't supported on this browser, disable or hide UI.
+        console.log("not supported serviceWorker");
+        return;
+      }
+      
+      if (!('PushManager' in window)) {
+        // Push isn't supported on this browser, disable or hide UI.
+        console.log("not supported PushManager");
+        return;
+      }
+      console.log("this browser support Push API");
+    }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        fetch('/subscribe', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ endpoint }),
-        });
-
-        navigator.serviceWorker.addEventListener('message', (event) => {
-            console.log('Received message from service worker:', event.data);
-            alert(event.data);
-        });
-
-        document.getElementById('sendNotificationBtn').addEventListener('click', () => {
-            const title = document.getElementById('title').value;
-            const content = document.getElementById('content').value;
-
-        fetch('/sendNotification', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                },
-            body: JSON.stringify({ endpoint, title, content }),
+    function registerServiceWorker() {
+      return navigator.serviceWorker
+        .register('/service-worker.js')
+        .then(function (registration) {
+          console.log('Service worker successfully registered.');
+          return registration;
         })
-        .then(response => response.json())
-        .then(data => console.log(data))
-        .catch(error => console.error('Error sending notification:', error));
+        .catch(function (err) {
+          console.error('Unable to register service worker.', err);
+        });
+    }
+
+    async function askPermission() {
+      return new Promise(function (resolve, reject) {
+        const permissionResult = Notification.requestPermission(function (result) {
+          resolve(result);
         });
 
+        if (permissionResult) {
+          permissionResult.then(resolve, reject);
+        }
+      }).then(function (permissionResult) {
+        if (permissionResult !== 'granted') {
+          throw new Error("We weren't granted permission.");
+        }
+      });
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+          .replace(/\-/g, '+')
+          .replace(/_/g, '/');
+
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+
+      for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    function arrayBufferToBase64(arrayBuffer) {
+      const uint8Array = new Uint8Array(arrayBuffer);
+      return btoa(String.fromCharCode.apply(null, uint8Array));
+    }
+
+    function subscribeUserToPush() {
+      return navigator.serviceWorker
+        .register('/service-worker.js')
+        .then(function (registration) {
+          const subscribeOptions = {
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(
+              'BLtGZU_KZQutcsBoNSNULHUAsARrTPwqtrDB9PKzIBLsZ9wzd9xPGkiwBe7HUaTYQ3seine-GU3HXiWziZFRAjw',
+            ),
+          };
+
+          return registration.pushManager.subscribe(subscribeOptions);
+        })
+        .then(function (pushSubscription) {
+          console.log(
+            'Received PushSubscription: ',
+            JSON.stringify(pushSubscription),
+          );
+
+          console.log(pushSubscription.endpoint);
+          console.log(pushSubscription.getKey('p256dh'));
+          console.log(pushSubscription.getKey('auth'));
+
+          const subscriptionObject = {
+            endpoint : pushSubscription.endpoint,
+            keys: {
+              p256dh: arrayBufferToBase64(pushSubscription.getKey('p256dh')),
+              auth: arrayBufferToBase64(pushSubscription.getKey('auth'))
+            }
+          }
+          return subscriptionObject;
+        });
+    }
+
+    function sendSubscriptionToBackEnd(subscription) {
+      return fetch('/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(subscription),
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error('Bad status code from server.');
+          }
+
+          return response.json();
+        })
+        .then(function (responseData) {
+          if (!(responseData.data && responseData.data.success)) {
+            throw new Error('Bad response from server.');
+          }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+      console.log('DOM is ready.');
+      checkPushAPISupport();
+      //registerServiceWorker();
+      await askPermission();
+      const subscriptionObject = await subscribeUserToPush();
+      console.log(subscriptionObject);
+      sendSubscriptionToBackEnd(subscriptionObject);
     });
-  </script>
+    </script>
 </body>
 </html>
